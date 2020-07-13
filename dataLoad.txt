@@ -1,0 +1,302 @@
+import pandas as pd;
+import cx_Oracle as db;
+import random;
+
+#print ('hello')
+tp_count = random.randint(10000,99999)
+mb_count = random.randint(10000,99999)
+sfg_count = random.randint(10000,99999)
+path = 'C:\\Alok\\Python\\'
+
+data = pd.read_csv(path+'dataLoad.csv');
+#print (data);
+
+con = db.connect('SIPRD4/QbHMTP7V@sterlinguser2.careuhhgvzsm.us-east-1.rds.amazonaws.com:1521/ORCL');
+cursor = con.cursor();
+cursor.execute('select * from CD_NODE_SECURE_PARMS where NODE_ID=\'WIN-PPS3L7F7GBN:-6e0578ce:16eac4b667b:-7d95\'');
+for val in cursor:
+    if 'CACerts' in val[3]:
+        print (val[4])
+    if 'CipherSuites' in val[3]:
+        print (val[4])
+    
+#cursor.close()
+#con.close()
+#my $user = 'SIPRD4';
+#my $password = 'QbHMTP7V';
+#dbi:Oracle:host=sterlinguser2.careuhhgvzsm.us-east-1.rds.amazonaws.com;sid=ORCL", $user, $password
+
+for row in data.itertuples():
+    
+    con = db.connect('SIPRD4/QbHMTP7V@sterlinguser2.careuhhgvzsm.us-east-1.rds.amazonaws.com:1521/ORCL');
+    
+    print ('account name ' +row.PRODUCERUSER);
+    if "-fg" not in str(row.PRODUCERUSER):
+        print ('Inbound');
+        cursor = con.cursor();
+        queryVal = 'select * from petpe_tradingpartner where tp_name like \'%'+row.PRODUCERNAME+'%\''
+        #queryVal = 'select * from petpe_tradingpartner'
+        #print (queryVal)
+        cursor.execute(queryVal)
+        masterProfile = cursor.fetchone()
+        cursor.close()
+        #print (masterProfile)
+
+        if not masterProfile:
+            with open(path+'op.csv') as myfile:
+                if row.PRODUCERNAME not in myfile.read():
+                    #print('Blahblah')
+                    #create master account - partner in pcm
+                    print ('create master account - partner in pcm')
+                    tp_count += 1
+                    mb_count += 1
+                    #tpQuery = 'INSERT INTO PETPE_TRADINGPARTNER for INB master account'
+                    tpQuery = f"INSERT INTO PETPE_TRADINGPARTNER VALUES('{tp_count}','{row.PRODUCERNAME}','{row.PRODUCERNAME}','addr','','{row.ADMINCONTACT}','phone','Mailbox','N','Y','{mb_count}','N','N',SQL','SQL',SYSDATE,NULL,NULL)"
+                    #protQuery = 'INSERT INTO PETPE_MAILBOX for INB master account'
+                    protQuery = f"INSERT INTO PETPE_MAILBOX VALUES('{mb_count}','TP','{tp_count}','Mailbox','/dummy','','ON','N','N','SQL','SQL',SYSDATE,NULL,NULL)"
+                    f = open(path+"op.csv","a+")
+                    f.write(tpQuery+'\n'+protQuery+'\n')
+                    f.close()
+        
+        #SFTP Process
+        if "SFTP" in str(row.PRODUCERPROT) and "PUSH" in str(row.PRODUCERPSPL):
+            print ('SFTP Process')
+            f = open(path+"op.csv","a+")
+            tp_count += 1
+            sfg_count += 1
+            tpQuery = f"INSERT INTO PETPE_TRADINGPARTNER VALUES('{tp_count}','{row.PRODUCERNAME}-{row.CONSUMERNAME}-{row.PUID}','{row.PRODUCERNAME}-{row.CONSUMERNAME}-{row.PUID}-Consu','addr','','{row.ADMINCONTACT}','phone','SFGSFTP','Y','Y','{sfg_count}','N','N','SQL','SQL',SYSDATE,NULL,NULL)"           
+            f.write(tpQuery+'\n')
+            f.close()
+            
+            #Get Auth User Key
+            cursor = con.cursor();
+            #queryforAuthUserKey = 'select USERKEY from AUTHO_XREF_SSH where USER_ID=\'macys-acis\''
+            queryforAuthUserKey = 'select USERKEY from AUTHO_XREF_SSH where USER_ID=\''+row.PRODUCERUSER+'\''
+            print (queryforAuthUserKey)
+            cursor.execute(queryforAuthUserKey)
+            AuthUserKey=cursor.fetchone()
+            if AuthUserKey:
+                for authuserkey in AuthUserKey:
+                    storeAuthUserKey = ''.join(authuserkey)
+                    print (storeAuthUserKey)
+                cursor.close()
+            f = open(path+"op.csv","a+")
+            protQuery = f"INSERT INTO PETPE_SFG_FTP VALUES('{sfg_count}','TP','{tp_count}','SFGSFTP','','{row.PRODUCERUSER}','samplePass','{row.PRODUCERMBX}','','{row.PRODUCERFILEPATT}','Y','BINARY','1','','','N','Y','SQL','SQL',SYSDATE,'','AdapterName','','','ACTIVE','','','','','')"           
+            f.write(protQuery+ '\n')
+            f.close()
+            
+        #SFTP Pull Process
+        if "SFTP" in str(row.PRODUCERPROT) and "PULL" in str(row.PRODUCERPSPL):
+            print ('SFTP Pull Process')
+            f = open(path+"op.csv","a+")
+            tp_count += 1
+            sfg_count += 1
+            tpQuery = f"INSERT INTO PETPE_TRADINGPARTNER VALUES('{tp_count}','{row.PRODUCERNAME}-{row.CONSUMERNAME}-{row.PUID}','{row.PRODUCERNAME}-{row.CONSUMERNAME}-{row.PUID}-Consu','addr','','{row.ADMINCONTACT}','phone','SFGSFTP','Y','Y','{sfg_count}','N','N','SQL','SQL',SYSDATE,NULL,NULL)"           
+            f.write(tpQuery+'\n')
+            f.close()
+            
+            #Get ProfileID
+            cursor = con.cursor();
+            #queryforKnownHostKey = 'select PROFILE_ID from SFTP_PROF where NAME=\''+row.PUSHSYSTEM+'\''
+            queryforProfileID = 'select PROFILE_ID,REMOTE_HOST,REMOTE_PORT from SFTP_PROF where NAME=\'USBank_SFGSFTP_PUT\''
+            #print (queryforProfileID)
+            cursor.execute(queryforProfileID)
+            profileID=cursor.fetchone()
+            
+            if profileID:
+                #print (profileID[2])
+                #Get Known Host Key
+                #storeProfileID = ''.join(profileID[0:1])
+                #print (storeProfileID)
+                queryforKnownHostKey = 'select KHOST_KEY_ID from SFTP_PROF_XREF_KHOST_KEY where PROFILE_ID=\''+profileID[0]+'\''
+                cursor.execute(queryforKnownHostKey)      
+                KHostKey=cursor.fetchone()
+                storeKHostKey = ''.join(KHostKey)
+                #print (storeKHostKey)
+                cursor.close()
+            
+            f = open(path+"op.csv","a+")
+            protQuery = f"INSERT INTO PETPE_SFG_FTP VALUES('{sfg_count}','TP','{tp_count}','SFGSFTP','{profileID[0]}','','','{row.CONSUMERMBX}','','{row.CONSUMERFILEPATT}','N','null','1','','{storeKHostKey}','N','N','SQL','SQL',SYSDATE,'useridentitykey','AdapterName','{profileID[1]}','{profileID[2]}','','','','','','')"           
+            f.write(protQuery +'\n')
+            f.close()
+        
+        #Mailbox Process
+        if "MAILBOX" in str(row.PRODUCERPROT) and "PUSH" in str(row.PRODUCERPSPL):
+            print ('Mailbox Process')
+            cursor = con.cursor();
+            queryVal = 'select * from petpe_tradingpartner where tp_name like \'%'+row.PRODUCERNAME+'-'+row.CONSUMERNAME+'-'+row.PUID+'%\''
+            #queryVal = 'select * from petpe_tradingpartner'
+            #print (queryVal)
+            cursor.execute(queryVal)
+            MBXProfile = cursor.fetchone()
+            cursor.close()
+            print (MBXProfile)
+            if not MBXProfile:
+                opFile = pd.read_csv(path+'op.csv',error_bad_lines=False,header=None,names=['0', '1', '2', '3', '4','5','6','7','8','9','10','11','12','13','14','15','16','17','18','19','20','21','22','23','24','25','26','27','28','29','30']);
+                #if opFile.iloc[:,1] == check:
+                MBXPartnerExist = 0;
+                for i in opFile.index:
+                    print ('file val' +str(opFile.iloc[i,1]))
+                    if opFile.iloc[i,1] == '\''+str(row.PRODUCERNAME)+'-'+str(row.CONSUMERNAME)+'-'+str(row.PUID)+'\'':
+                        print ('in')
+                        MBXPartnerExist = 1;
+                        print (opFile.iloc[i,10])
+                        f = open(path+"op.csv","a+")
+                        tp_count += 1
+                        sfg_count += 1
+                        protQuery = f"UPDATE PETPE_SFG_FTP SET IN_DIRECTORY='{row.PRODUCERMBX}' where PK_ID={opFile.iloc[i,10]}"
+                        f.write(protQuery+ '\n')
+                        f.close()
+                if MBXPartnerExist == 0:
+                    f = open(path+"op.csv","a+")
+                    tp_count += 1
+                    sfg_count += 1
+                    tpQuery = f"INSERT INTO PETPE_TRADINGPARTNER VALUES('{tp_count}','{row.PRODUCERNAME}-{row.CONSUMERNAME}-{row.PUID}','{row.PRODUCERNAME}-{row.CONSUMERNAME}-{row.PUID}','addr','','{row.ADMINCONTACT}','phone','SFGSFTP','Y','Y','{sfg_count}','N','N','SQL','SQL',SYSDATE,NULL,NULL)"           
+                    protQuery = f"INSERT INTO PETPE_SFG_FTP VALUES('{sfg_count}','TP','{tp_count}','SFGSFTP','','{row.PRODUCERUSER}','samplePass','','{row.CONSUMERMBX}','{row.PRODUCERFILEPATT}','Y','BINARY','1','','','N','Y','SQL','SQL',SYSDATE,'','AdapterName','','','ACTIVE','','','','','')"           
+                    f.write(tpQuery+'\n'+protQuery+ '\n')
+                    f.close()
+            else:
+                f = open(path+"op.csv","a+")
+                queryforSFGID = 'select PARTNER_PROTOCOL_REF FROM PETPE_TRADINGPARTNER WHERE tp_name like \'%'+row.PRODUCERNAME+'-'+row.CONSUMERNAME+'-'+row.PUID+'%\''
+                cursor.execute(queryVal)
+                MBXSFGID = cursor.fetchone()
+                cursor.close()
+                print (MBXSFGID[0])
+                protQuery = f"UPDATE PETPE_SFG_FTP SET IN_DIRECTORY='{row.PRODUCERMBX}' where PK_ID={MBXSFGID[0]}"
+                f.write(protQuery+ '\n')
+                f.close()
+        
+    else:
+        print ('Outbound');
+        cursor = con.cursor();
+        queryVal = 'select * from petpe_tradingpartner where tp_name like \'%'+row.CONSUMERNAME+'%\''
+        #queryVal = 'select * from petpe_tradingpartner'
+        #print (queryVal)
+        cursor.execute(queryVal)
+        masterProfile = cursor.fetchone()
+        cursor.close()
+        
+        if not masterProfile:
+             with open(path+'op.csv') as myfile:
+                if row.PRODUCERNAME not in myfile.read():
+                    #print('Blahblah')
+                    #create master account - partner in pcm
+                    print ('create master account - partner in pcm')
+                    tp_count += 1
+                    mb_count += 1
+                    tpQuery = f"INSERT INTO PETPE_TRADINGPARTNER VALUES('{tp_count}','{row.CONSUMERNAME}','{row.CONSUMERNAME}','addr','','{row.ADMINCONTACT}','phone','Mailbox','N','Y','{mb_count}','N','N','SQL','SQL',SYSDATE,NULL,NULL)"
+                    protQuery = f"INSERT INTO PETPE_MAILBOX VALUES('{mb_count}','TP','{tp_count}','Mailbox','/dummy','','ON','N','N','SQL','SQL',SYSDATE,NULL,NULL)"
+                    f = open(path+"op.csv","a+")
+                    f.write(tpQuery+'\n'+protQuery+'\n')
+                    f.close()
+        
+        #SFTP Process
+        if "SFTP" in str(row.CONSUMERPROT) and "PUSH" in str(row.CONSUMERPSPL):
+            print ('SFTP Process')
+            f = open(path+"op.csv","a+")
+            tp_count += 1
+            sfg_count += 1
+            tpQuery = f"INSERT INTO PETPE_TRADINGPARTNER VALUES('{tp_count}','{row.CONSUMERNAME}-{row.PRODUCERNAME}-{row.PUID}','{row.CONSUMERNAME}-{row.PRODUCERNAME}-{row.PUID}-Produ','addr','','{row.ADMINCONTACT}','phone','SFGSFTP','Y','Y','{sfg_count}','N','N','SQL','SQL',SYSDATE,NULL,NULL)"
+            f.write(tpQuery+'\n')
+            f.close()
+            
+            #Get ProfileID
+            cursor = con.cursor();
+            #queryforKnownHostKey = 'select PROFILE_ID from SFTP_PROF where NAME=\''+row.PUSHSYSTEM+'\''
+            queryforProfileID = 'select PROFILE_ID,REMOTE_HOST,REMOTE_PORT from SFTP_PROF where NAME=\'USBank_SFGSFTP_PUT\''
+            #print (queryforProfileID)
+            cursor.execute(queryforProfileID)
+            profileID=cursor.fetchone()
+            
+            if profileID:
+                #print (profileID[2])
+                #Get Known Host Key
+                #storeProfileID = ''.join(profileID[0:1])
+                #print (storeProfileID)
+                queryforKnownHostKey = 'select KHOST_KEY_ID from SFTP_PROF_XREF_KHOST_KEY where PROFILE_ID=\''+profileID[0]+'\''
+                cursor.execute(queryforKnownHostKey)      
+                KHostKey=cursor.fetchone()
+                storeKHostKey = ''.join(KHostKey)
+                #print (storeKHostKey)
+                cursor.close()
+            
+            f = open(path+"op.csv","a+")
+            protQuery = f"INSERT INTO PETPE_SFG_FTP VALUES('{sfg_count}','TP','{tp_count}','SFGSFTP','{profileID[0]}','','','{row.CONSUMERMBX}','','{row.CONSUMERFILEPATT}','N','null','1','','{storeKHostKey}','N','N','SQL','SQL',SYSDATE,'useridentitykey','AdapterName','{profileID[1]}','{profileID[2]}','','','','','','')"           
+            f.write(protQuery +'\n')
+            f.close()
+        
+        #SFTP Pull Process
+        if "SFTP" in str(row.CONSUMERPROT) and "PULL" in str(row.CONSUMERPSPL):
+            print ('SFTP Pull Process')
+            f = open(path+"op.csv","a+")
+            tp_count += 1
+            sfg_count += 1
+            tpQuery = f"INSERT INTO PETPE_TRADINGPARTNER VALUES('{tp_count}','{row.CONSUMERNAME}-{row.PRODUCERNAME}-{row.PUID}','{row.CONSUMERNAME}-{row.PRODUCERNAME}-{row.PUID}-Consu','addr','','{row.ADMINCONTACT}','phone','SFGSFTP','Y','Y','{sfg_count}','N','N','SQL','SQL',SYSDATE,NULL,NULL)"           
+            f.write(tpQuery+'\n')
+            f.close()
+            
+            #Get Auth User Key
+            cursor = con.cursor();
+            #queryforAuthUserKey = 'select USERKEY from AUTHO_XREF_SSH where USER_ID=\'macys-acis\''
+            queryforAuthUserKey = 'select USERKEY from AUTHO_XREF_SSH where USER_ID=\''+row.CONSUMERUSER+'\''
+            print (queryforAuthUserKey)
+            cursor.execute(queryforAuthUserKey)
+            AuthUserKey=cursor.fetchone()
+            if AuthUserKey:
+                for authuserkey in AuthUserKey:
+                    storeAuthUserKey = ''.join(authuserkey)
+                    print (storeAuthUserKey)
+                cursor.close()
+            f = open(path+"op.csv","a+")
+            protQuery = f"INSERT INTO PETPE_SFG_FTP VALUES('{sfg_count}','TP','{tp_count}','SFGSFTP','','{row.CONSUMERUSER}','samplePass','{row.CONSUMERMBX}','','{row.CONSUMERFILEPATT}','Y','BINARY','1','','','N','Y','SQL','SQL',SYSDATE,'','AdapterName','','','ACTIVE','','','','','')"           
+            f.write(protQuery+ '\n')
+            f.close()
+        
+        
+        #Mailbox Process
+        if "MAILBOX" in str(row.CONSUMERPROT) and "PULL" in str(row.CONSUMERPSPL):
+            print ('Mailbox Process')
+            cursor = con.cursor();
+            queryVal = 'select * from petpe_tradingpartner where tp_name like \'%'+row.PRODUCERNAME+'-'+row.CONSUMERNAME+'-'+row.PUID+'%\''
+            #queryVal = 'select * from petpe_tradingpartner'
+            #print (queryVal)
+            cursor.execute(queryVal)
+            MBXProfile = cursor.fetchone()
+            cursor.close()
+            print (MBXProfile)
+            if not MBXProfile:
+                opFile = pd.read_csv(path+'op.csv',error_bad_lines=False,header=None,names=['0', '1', '2', '3', '4','5','6','7','8','9','10','11','12','13','14','15','16','17','18','19','20','21','22','23','24','25','26','27','28','29','30']);
+                #if opFile.iloc[:,1] == check:
+                MBXPartnerExist = 0;
+                for i in opFile.index:
+                    print ('file val' +str(opFile.iloc[i,1]))
+                    if opFile.iloc[i,1] == '\''+str(row.CONSUMERNAME)+'-'+str(row.PRODUCERNAME)+'-'+str(row.PUID)+'\'':
+                        print ('in')
+                        MBXPartnerExist = 1;
+                        print (opFile.iloc[i,10])
+                        f = open(path+"op.csv","a+")
+                        tp_count += 1
+                        sfg_count += 1
+                        protQuery = f"UPDATE PETPE_SFG_FTP SET OUT_DIRECTORY='{row.CONSUMERMBX}' where PK_ID={opFile.iloc[i,10]}"
+                        f.write(protQuery+ '\n')
+                        f.close()
+                if MBXPartnerExist == 0:
+                    f = open(path+"op.csv","a+")
+                    tp_count += 1
+                    sfg_count += 1
+                    tpQuery = f"INSERT INTO PETPE_TRADINGPARTNER VALUES('{tp_count}','{row.CONSUMERNAME}-{row.PRODUCERNAME}-{row.PUID}','{row.CONSUMERNAME}-{row.PRODUCERNAME}-{row.PUID}','addr','','{row.ADMINCONTACT}','phone','SFGSFTP','Y','Y','{sfg_count}','N','N','SQL','SQL',SYSDATE,NULL,NULL)"           
+                    protQuery = f"INSERT INTO PETPE_SFG_FTP VALUES('{sfg_count}','TP','{tp_count}','SFGSFTP','','{row.CONSUMERUSER}','samplePass','','{row.CONSUMERMBX}','{row.CONSUMERFILEPATT}','Y','BINARY','1','','','N','Y','SQL','SQL',SYSDATE,'','AdapterName','','','ACTIVE','','','','','')"           
+                    f.write(tpQuery+'\n'+protQuery+ '\n')
+                    f.close()
+            else:
+                f = open(path+"op.csv","a+")
+                queryforSFGID = 'select PARTNER_PROTOCOL_REF FROM PETPE_TRADINGPARTNER WHERE tp_name like \'%'+row.CONSUMERNAME+'-'+row.PRODUCERNAME+'-'+row.PUID+'%\''
+                cursor.execute(queryVal)
+                MBXSFGID = cursor.fetchone()
+                cursor.close()
+                print (MBXSFGID[0])
+                protQuery = f"UPDATE PETPE_SFG_FTP SET OUT_DIRECTORY='{row.CONSUMERMBX}' where PK_ID={MBXSFGID[0]}"
+                f.write(protQuery+ '\n')
+                f.close()
+
+#print (data.iloc[:,3]);
